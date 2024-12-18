@@ -69,6 +69,7 @@ async def update_status(update: StatusUpdate):
             (update.program_name, datetime.now(), datetime.now()),
         )
         conn.commit()
+        print(f"Status for {update.program_name} updated")
         return {"message": f"Status for {update.program_name} updated"}
     finally:
         conn.close()
