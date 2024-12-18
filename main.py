@@ -8,6 +8,8 @@ import configparser
 import time
 import threading
 import requests
+import logging
+
 
 # Загрузка конфигурации
 load_dotenv()
@@ -19,6 +21,13 @@ CHECK_INTERVAL = int(config["monitoring"]["check_interval"])
 AUTHORIZED_KEYS = config["security"]["api_keys"].split(",")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = config["security"]["chat_id"]
+
+# Настройка базового конфигуратора логирования
+logging.basicConfig(
+    level=logging.INFO,  # Уровень логирования (INFO, DEBUG, ERROR и т.д.)
+    format="%(asctime)s - %(levelname)s - %(message)s",  # Формат сообщения
+)
+
 
 app = FastAPI()
 
@@ -69,7 +78,7 @@ async def update_status(update: StatusUpdate):
             (update.program_name, datetime.now(), datetime.now()),
         )
         conn.commit()
-        print(f"Status for {update.program_name} updated")
+        logging.info(f"Status for {update.program_name} updated")
         return {"message": f"Status for {update.program_name} updated"}
     finally:
         conn.close()
