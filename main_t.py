@@ -13,7 +13,7 @@ import logging
 # Загрузка конфигурации
 load_dotenv()
 config = configparser.ConfigParser()
-config.read("config.ini")
+config.read("config_t.ini")
 
 try:
     DATABASE = config["database"]["path"]
@@ -181,7 +181,7 @@ def monitor_programs():
             send_telegram_message(f"Ошибка мониторинга: {e}")
 
 
-# if __name__ == "__main__":
-#     import uvicorn
+if __name__ == "__main__":
+    import uvicorn
 
-#     uvicorn.run(app, host="0.0.0.0", port=5000)
+    uvicorn.run(app, host="0.0.0.0", port=5000)

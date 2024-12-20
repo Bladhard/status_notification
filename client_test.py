@@ -2,7 +2,7 @@ import time
 import requests
 
 # Конфигурация клиента
-API_URL = "http://185.149.146.250:8050/update_status"
+API_URL = "http://localhost:5000/update_status"
 PROGRAM_NAME = "Energy_SolDar"
 API_KEY = "Energy_SolDar"  # Тот же ключ, что указан в config.ini сервера
 
