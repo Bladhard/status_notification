@@ -10,6 +10,7 @@ import threading
 import requests
 import logging
 
+
 # Загрузка конфигурации
 load_dotenv()
 config = configparser.ConfigParser()
@@ -34,10 +35,18 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
-app = FastAPI()
+
+app = FastAPI(
+    title="Status Notification Service",
+    description="API для отправки уведомлений о статусе программ",
+    version="0.1",
+    redoc_url=None,
+    docs_url=None,
+)
 
 
 def get_db_connection():
+    """Функция для получения соединения с базой данных."""
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     return conn
