@@ -55,10 +55,11 @@ def startup():
     conn = get_db_connection()
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS program_status (
+        CREATE TABLE IF NOT EXISTS programs (
             program_name TEXT PRIMARY KEY,
             last_update DATETIME,
-            notified INTEGER DEFAULT 0
+            successful_start_time DATETIME,
+            status TEXT
         )
         """
     )
