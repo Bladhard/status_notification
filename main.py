@@ -9,7 +9,7 @@ import time
 import threading
 import requests
 import logging
-
+from fastapi.middleware.cors import CORSMiddleware
 
 # Загрузка конфигурации
 load_dotenv()
@@ -42,6 +42,19 @@ app = FastAPI(
     version="0.1",
     redoc_url=None,
     docs_url=None,
+)
+
+# Настройка CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8000",  # Локальный сервер
+        "http://127.0.0.1:8000",  # Локальный сервер (альтернатива)
+        "*",  # Разрешить все источники (используйте с осторожностью)
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],  # Разрешить все HTTP-методы
+    allow_headers=["*"],  # Разрешить все заголовки
 )
 
 
