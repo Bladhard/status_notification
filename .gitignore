@@ -1,2 +1,2 @@
 .env
-program_status.db
+*.db
