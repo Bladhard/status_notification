@@ -17,6 +17,8 @@ def notify_server():
         print(f"Ошибка отправки статуса: {e}")
 
 
+
+
 while True:
     try:
         # Основной код программы

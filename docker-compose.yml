@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    volumes:
+      - ./data:/app/data  # Монтируем папку data
+    environment:
+      - DATABASE=/app/data/monitoring.db  # Указываем путь к БД в монтируемой папке
+    restart: always
