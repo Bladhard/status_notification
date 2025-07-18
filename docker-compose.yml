@@ -4,7 +4,12 @@ services:
   app:
     build: .
     volumes:
-      - ./data:/status_notification/data # Монтируем папку data
+      - ./data:/app/data # Монтируем папку data
     environment:
-      - DATABASE=/status_notification/data/monitoring.db # Указываем путь к БД в монтируемой папке
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - CHECK_INTERVAL=30
+      - ALLOWED_DELAY=300
+    ports:
+      - "5000:5000"
     restart: always
