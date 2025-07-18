@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime, timedelta, timezone
@@ -111,8 +111,10 @@ app.add_middleware(
 
 # Модель
 class StatusUpdate(BaseModel):
-    object_name: str
-    sub_object_name: str
+    object_name: str = None
+    sub_object_name: str = None
+    program_name: str = None
+    api_key: str = None
 
 
 # Инициализация БД
@@ -160,16 +162,29 @@ def on_startup():
 @app.post("/update_status")
 def update_status(data: StatusUpdate):
     now = datetime.now(timezone.utc).isoformat()
+
+    # Поддержка старого формата
+    if not data.object_name and data.program_name and data.api_key:
+        object_name = data.program_name
+        sub_object_name = data.api_key
+    else:
+        if not data.object_name or not data.sub_object_name:
+            raise HTTPException(
+                status_code=400, detail="Missing object_name or sub_object_name"
+            )
+        object_name = data.object_name
+        sub_object_name = data.sub_object_name
+
     conn = get_db_connection()
     try:
         object_row = conn.execute(
-            "SELECT id FROM objects WHERE name = ?", (data.object_name,)
+            "SELECT id FROM objects WHERE name = ?", (object_name,)
         ).fetchone()
         if not object_row:
-            conn.execute("INSERT INTO objects (name) VALUES (?)", (data.object_name,))
+            conn.execute("INSERT INTO objects (name) VALUES (?)", (object_name,))
             conn.commit()
             object_row = conn.execute(
-                "SELECT id FROM objects WHERE name = ?", (data.object_name,)
+                "SELECT id FROM objects WHERE name = ?", (object_name,)
             ).fetchone()
 
         object_id = object_row["id"]
@@ -179,7 +194,7 @@ def update_status(data: StatusUpdate):
             VALUES (?, ?, ?, 0)
             ON CONFLICT(object_id, name) DO UPDATE SET last_update = excluded.last_update
         """,
-            (object_id, data.sub_object_name, now),
+            (object_id, sub_object_name, now),
         )
         conn.commit()
     finally:
