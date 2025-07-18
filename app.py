@@ -203,6 +203,7 @@ def update_status(data: StatusUpdate):
             (object_id, sub_object_name, now),
         )
         conn.commit()
+        logging.info(f"Получен сигнал от {object_name}::{sub_object_name}")
     finally:
         conn.close()
     return {"status": "updated"}
