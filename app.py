@@ -24,6 +24,7 @@ logging.basicConfig(
 # FastAPI
 app = FastAPI(
     title="Monitoring System API",
+    version="1.1",
     description="""
 ## Эндпоинты:
 
@@ -100,12 +101,17 @@ app = FastAPI(
 ---
 """,
 )
+# Настройка CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:8000",  # Локальный сервер
+        "http://127.0.0.1:8000",  # Локальный сервер (альтернатива)
+        "*",  # Разрешить все источники (используйте с осторожностью)
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Разрешить все HTTP-методы
+    allow_headers=["*"],  # Разрешить все заголовки
 )
 
 
