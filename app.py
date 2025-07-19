@@ -215,24 +215,37 @@ def get_status_tree():
     now = datetime.now(timezone.utc)
     conn = get_db_connection()
     result = []
+    total_objects = 0
+    total_active_objects = 0
+    total_inactive_objects = 0
     try:
         objects = conn.execute("SELECT * FROM objects").fetchall()
+        total_objects = len(objects)
+
         for obj in objects:
             sub_objects = conn.execute(
                 "SELECT * FROM sub_objects WHERE object_id = ?", (obj["id"],)
             ).fetchall()
+
             children = []
+            total_children = len(sub_objects)
+            active_children = 0
+            inactive_children = 0
+
             for sub in sub_objects:
-                if sub["last_update"]:
+                status = "inactive"
+                if sub["last_update"] and not sub["paused"]:
                     last = datetime.fromisoformat(sub["last_update"])
-                    # Преобразуем наивную дату в timezone-aware
                     if last.tzinfo is None:
                         last = last.replace(tzinfo=timezone.utc)
-                    # Сравниваем разницу с ALLOWED_DELAY
-                    time_diff = now - last
-                    status = "active" if time_diff <= ALLOWED_DELAY else "inactive"
+                    if now - last <= ALLOWED_DELAY:
+                        status = "active"
+                        active_children += 1
+                    else:
+                        inactive_children += 1
                 else:
-                    status = "inactive"
+                    inactive_children += 1
+
                 children.append(
                     {
                         "name": sub["name"],
@@ -241,11 +254,35 @@ def get_status_tree():
                         "paused": bool(sub["paused"]),
                     }
                 )
+
+                # Определяем статус объекта
+            current_status = "active" if active_children > 0 else "inactive"
+
+            # Обновляем статус в БД, если он изменился
+            if obj["status"] != current_status:
+                conn.execute(
+                    "UPDATE objects SET status = ? WHERE id = ?",
+                    (current_status, obj["id"]),
+                )
+                conn.commit()
+
+            # Обновляем общую статистику
+            if current_status == "active":
+                total_active_objects += 1
+            else:
+                total_inactive_objects += 1
+
+            # Добавляем объект в результат
             result.append(
                 {
                     "name": obj["name"],
                     "paused": bool(obj["paused"]),
-                    "status": obj["status"],
+                    "status": current_status,
+                    "stats": {
+                        "total_children": total_children,
+                        "active_children": active_children,
+                        "inactive_children": inactive_children,
+                    },
                     "children": children,
                 }
             )
