@@ -4,12 +4,12 @@ services:
   app:
     build: .
     volumes:
-      - ./data:/app/data # Монтируем папку data
+      - ./data:/status_notification/data # Монтируем папку data
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      - CHECK_INTERVAL=30
-      - ALLOWED_DELAY=300
+      - CHECK_INTERVAL=600
+      - ALLOWED_DELAY=1200
     ports:
       - "5000:5000"
     restart: always

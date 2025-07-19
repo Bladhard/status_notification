@@ -137,7 +137,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS objects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE,
-            paused INTEGER DEFAULT 0
+            paused INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'inactive'
         )
     """
     )
@@ -244,6 +245,7 @@ def get_status_tree():
                 {
                     "name": obj["name"],
                     "paused": bool(obj["paused"]),
+                    "status": obj["status"],
                     "children": children,
                 }
             )
@@ -324,47 +326,82 @@ def send_telegram_message(message):
 
 # Цикл мониторинга
 def monitor_loop():
+    object_statuses = {}  # Словарь для хранения предыдущих статусов объектов
+
     while True:
         time.sleep(CHECK_INTERVAL)
         now = datetime.now(timezone.utc)
         conn = get_db_connection()
         try:
             objects = conn.execute("SELECT id, name, paused FROM objects").fetchall()
+
+            # Проходим по всем объектам
             for obj in objects:
+                obj_id = obj["id"]
+                obj_name = obj["name"]
+
                 if obj["paused"]:
-                    continue
+                    continue  # Пропускаем приостановленные объекты
+
+                # Получаем все под-объекты для текущего объекта
                 subs = conn.execute(
-                    "SELECT * FROM sub_objects WHERE object_id = ?", (obj["id"],)
+                    "SELECT * FROM sub_objects WHERE object_id = ?", (obj_id,)
                 ).fetchall()
+
+                # Проверяем статус объекта (активен, если хотя бы один под-объект активен)
+                is_active = False
                 for sub in subs:
-                    if sub["paused"]:
+                    if sub["paused"] or not sub["last_update"]:
                         continue
-                    if not sub["last_update"]:
-                        continue
+
                     last = datetime.fromisoformat(sub["last_update"])
-                    # Обеспечиваем, что last - timezone-aware
                     if last.tzinfo is None:
                         last = last.replace(tzinfo=timezone.utc)
-                    # Теперь обе now и last - timezone-aware
+
+                    # Если нашли хотя бы один активный под-объект
+                    if now - last <= ALLOWED_DELAY:
+                        is_active = True
+                        break
+
+                # Проверяем, изменился ли статус объекта
+                if obj_id in object_statuses:
+                    if object_statuses[obj_id] != is_active:
+                        # Статус изменился, отправляем уведомление
+                        status_text = "🟢 Активен" if is_active else "🔴 Неактивен"
+                        send_telegram_message(f"{obj_name}: {status_text}")
+
+                        # Обновляем статус в БД
+                        conn.execute(
+                            "UPDATE objects SET status = ? WHERE id = ?",
+                            ("active" if is_active else "inactive", obj_id),
+                        )
+
+                # Обновляем статус в словаре
+                object_statuses[obj_id] = is_active
+
+                # Обновляем под-объекты (без уведомлений)
+                for sub in subs:
+                    if sub["paused"] or not sub["last_update"]:
+                        continue
+
+                    last = datetime.fromisoformat(sub["last_update"])
+                    if last.tzinfo is None:
+                        last = last.replace(tzinfo=timezone.utc)
+
+                    # Обновляем только флаг notified
                     if now - last > ALLOWED_DELAY:
-                        if not sub["notified"]:
-                            send_telegram_message(
-                                f"🔴 {obj['name']}::{sub['name']} не отвечает"
-                            )
-                            conn.execute(
-                                "UPDATE sub_objects SET notified = 1 WHERE id = ?",
-                                (sub["id"],),
-                            )
+                        conn.execute(
+                            "UPDATE sub_objects SET notified = 1 WHERE id = ?",
+                            (sub["id"],),
+                        )
                     else:
-                        if sub["notified"]:
-                            send_telegram_message(
-                                f"🟢 {obj['name']}::{sub['name']} восстановлен"
-                            )
-                            conn.execute(
-                                "UPDATE sub_objects SET notified = 0 WHERE id = ?",
-                                (sub["id"],),
-                            )
+                        conn.execute(
+                            "UPDATE sub_objects SET notified = 0 WHERE id = ?",
+                            (sub["id"],),
+                        )
+
             conn.commit()
+
         except Exception as e:
             logging.error(f"Ошибка мониторинга: {e}")
             send_telegram_message(f"Ошибка мониторинга: {e}")
