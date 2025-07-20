@@ -8,6 +8,7 @@ import requests
 import logging
 import os
 import time
+import re
 
 # Конфигурация
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -130,6 +131,13 @@ def get_db_connection():
     return conn
 
 
+def natural_sort_key(s):
+    """Ключ для сортировки с учётом чисел в строке"""
+    return [
+        int(text) if text.isdigit() else text.lower() for text in re.split(r"(\d+)", s)
+    ]
+
+
 def init_db():
     conn = get_db_connection()
     conn.execute(
@@ -215,12 +223,10 @@ def get_status_tree():
     now = datetime.now(timezone.utc)
     conn = get_db_connection()
     result = []
-    total_objects = 0
     total_active_objects = 0
     total_inactive_objects = 0
     try:
         objects = conn.execute("SELECT * FROM objects").fetchall()
-        total_objects = len(objects)
 
         for obj in objects:
             sub_objects = conn.execute(
@@ -286,6 +292,10 @@ def get_status_tree():
                     "children": children,
                 }
             )
+
+        # Сортировка по имени с учетом чисел
+        result.sort(key=lambda x: natural_sort_key(x["name"]))
+
         return result
     finally:
         conn.close()
