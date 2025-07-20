@@ -133,8 +133,11 @@ def get_db_connection():
 
 def natural_sort_key(s):
     """Ключ для сортировки с учётом чисел в строке"""
+    if s is None:
+        return []
     return [
-        int(text) if text.isdigit() else text.lower() for text in re.split(r"(\d+)", s)
+        int(text) if text.isdigit() else text.lower()
+        for text in re.split(r"(\d+)", str(s))
     ]
 
 
@@ -293,8 +296,10 @@ def get_status_tree():
                 }
             )
 
-        # Сортировка по имени с учетом чисел
-        result.sort(key=lambda x: natural_sort_key(x["name"]))
+        # Сортировка дочерних элементов в каждом объекте по имени с учетом чисел
+        for item in result:
+            if "children" in item and isinstance(item["children"], list):
+                item["children"].sort(key=lambda x: natural_sort_key(x["name"]))
 
         return result
     finally:
