@@ -17,12 +17,6 @@ CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 30))
 ALLOWED_DELAY = timedelta(seconds=int(os.getenv("ALLOWED_DELAY", 300)))
 DATABASE = "monitoring.db"
 
-# TELEGRAM_BOT_TOKEN = "6589598395:AAEADMcUbgXXgnlYaQLlAzCrG4OdPbabyas"
-# CHAT_ID = 5370215573
-# CHECK_INTERVAL = 20
-# ALLOWED_DELAY = timedelta(seconds=40)
-
-
 # Логирование
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
