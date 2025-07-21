@@ -268,7 +268,7 @@ def get_status_tree():
 
             for sub in sub_objects:
                 status = "inactive"
-                if sub["last_update"] and not sub["notification"]:
+                if sub["last_update"]:
                     last = datetime.fromisoformat(sub["last_update"])
                     if last.tzinfo is None:
                         last = last.replace(tzinfo=timezone.utc)
@@ -289,10 +289,8 @@ def get_status_tree():
                     }
                 )
 
-                # Определяем статус объекта
             current_status = "active" if active_children > 0 else "inactive"
 
-            # Обновляем статус в БД, если он изменился
             if obj["status"] != current_status:
                 conn.execute(
                     "UPDATE objects SET status = ? WHERE id = ?",
@@ -300,13 +298,11 @@ def get_status_tree():
                 )
                 conn.commit()
 
-            # Обновляем общую статистику
             if current_status == "active":
                 total_active_objects += 1
             else:
                 total_inactive_objects += 1
 
-            # Добавляем объект в результат
             result.append(
                 {
                     "name": obj["name"],
@@ -321,7 +317,6 @@ def get_status_tree():
                 }
             )
 
-        # Сортировка дочерних элементов в каждом объекте по имени с учетом чисел
         for item in result:
             if "children" in item and isinstance(item["children"], list):
                 item["children"].sort(key=lambda x: natural_sort_key(x["name"]))
