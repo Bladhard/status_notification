@@ -11,5 +11,5 @@ services:
       - CHECK_INTERVAL=600
       - ALLOWED_DELAY=1200
     ports:
-      - "5000:5000"
+      - "8050:8050"
     restart: always

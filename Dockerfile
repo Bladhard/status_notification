@@ -13,4 +13,4 @@ RUN mkdir -p /status_notification/data
 
 COPY . .
 
-CMD gunicorn app:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:5000
+CMD gunicorn app:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8050

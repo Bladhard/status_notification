@@ -51,12 +51,18 @@ app = FastAPI(
   {
     "name": "Energy_SolDar",
     "paused": false,
+    "status": "active",
+    "stats": {
+      "total_children": 2,
+      "active_children": 1,
+      "inactive_children": 1
+    },
     "children": [
       {
         "name": "PLC1",
         "last_update": "2025-07-18T12:45:00",
         "status": "active",
-        "paused": false
+        "notification": true
       },
       ...
     ]
@@ -66,16 +72,31 @@ app = FastAPI(
 
 ---
 
+### POST /set_notification
+Включает или выключает уведомления для под-объекта.
+
+Параметры запроса:
+{
+  "object_name": "Energy_SolDar",
+  "sub_object_name": "PLC1"
+}
+
+Пример ответа:
+{
+  "notification": true
+}
+---
+
+---
+
 ### POST /pause
 Приостанавливает мониторинг объекта или под-объекта.
 
 Параметры запроса:
 - object_name: str (обязательный)
-- sub_object_name: str (опционально)
 
 Примеры:
 - Приостановить весь объект: `/pause?object_name=Energy_SolDar`
-- Приостановить только под-объект: `/pause?object_name=Energy_SolDar&sub_object_name=PLC1`
 
 ---
 
@@ -84,7 +105,6 @@ app = FastAPI(
 
 Аналогично /pause:
 - `/resume?object_name=Energy_SolDar`
-- `/resume?object_name=Energy_SolDar&sub_object_name=PLC1`
 
 ---
 
@@ -124,6 +144,11 @@ class StatusUpdate(BaseModel):
     api_key: str = None
 
 
+class NotificationToggle(BaseModel):
+    object_name: str
+    sub_object_name: str
+
+
 # Инициализация БД
 def get_db_connection():
     conn = sqlite3.connect(DATABASE)
@@ -161,7 +186,7 @@ def init_db():
             name TEXT,
             last_update TEXT,
             notified INTEGER DEFAULT 0,
-            paused INTEGER DEFAULT 0,
+            notification INTEGER DEFAULT 0,  -- Изменено с paused на notification
             UNIQUE(object_id, name),
             FOREIGN KEY(object_id) REFERENCES objects(id) ON DELETE CASCADE
         )
@@ -243,7 +268,7 @@ def get_status_tree():
 
             for sub in sub_objects:
                 status = "inactive"
-                if sub["last_update"] and not sub["paused"]:
+                if sub["last_update"] and not sub["notification"]:
                     last = datetime.fromisoformat(sub["last_update"])
                     if last.tzinfo is None:
                         last = last.replace(tzinfo=timezone.utc)
@@ -260,7 +285,7 @@ def get_status_tree():
                         "name": sub["name"],
                         "last_update": sub["last_update"],
                         "status": status,
-                        "paused": bool(sub["paused"]),
+                        "notification": bool(sub["notification"]),
                     }
                 )
 
@@ -306,20 +331,40 @@ def get_status_tree():
         conn.close()
 
 
-@app.post("/pause")
-def pause_monitoring(object_name: str, sub_object_name: str = None):
+@app.post("/set_notification")
+def toggle_notification(data: NotificationToggle):
     conn = get_db_connection()
     try:
-        if sub_object_name:
-            conn.execute(
-                """
-                UPDATE sub_objects SET paused = 1
-                WHERE name = ? AND object_id = (SELECT id FROM objects WHERE name = ?)
-            """,
-                (sub_object_name, object_name),
-            )
-        else:
-            conn.execute("UPDATE objects SET paused = 1 WHERE name = ?", (object_name,))
+        obj = conn.execute(
+            "SELECT id FROM objects WHERE name = ?", (data.object_name,)
+        ).fetchone()
+        if not obj:
+            raise HTTPException(status_code=404, detail="Object not found")
+
+        object_id = obj["id"]
+        sub = conn.execute(
+            "SELECT id, notification FROM sub_objects WHERE object_id = ? AND name = ?",
+            (object_id, data.sub_object_name),
+        ).fetchone()
+        if not sub:
+            raise HTTPException(status_code=404, detail="Sub-object not found")
+
+        new_state = 0 if sub["notification"] else 1
+        conn.execute(
+            "UPDATE sub_objects SET notification = ? WHERE id = ?",
+            (new_state, sub["id"]),
+        )
+        conn.commit()
+        return {"notification": bool(new_state)}
+    finally:
+        conn.close()
+
+
+@app.post("/pause")
+def pause_monitoring(object_name: str):
+    conn = get_db_connection()
+    try:
+        conn.execute("UPDATE objects SET paused = 1 WHERE name = ?", (object_name,))
         conn.commit()
     finally:
         conn.close()
@@ -327,19 +372,10 @@ def pause_monitoring(object_name: str, sub_object_name: str = None):
 
 
 @app.post("/resume")
-def resume_monitoring(object_name: str, sub_object_name: str = None):
+def resume_monitoring(object_name: str):
     conn = get_db_connection()
     try:
-        if sub_object_name:
-            conn.execute(
-                """
-                UPDATE sub_objects SET paused = 0
-                WHERE name = ? AND object_id = (SELECT id FROM objects WHERE name = ?)
-            """,
-                (sub_object_name, object_name),
-            )
-        else:
-            conn.execute("UPDATE objects SET paused = 0 WHERE name = ?", (object_name,))
+        conn.execute("UPDATE objects SET paused = 0 WHERE name = ?", (object_name,))
         conn.commit()
     finally:
         conn.close()
@@ -387,7 +423,6 @@ def monitor_loop():
         try:
             objects = conn.execute("SELECT id, name, paused FROM objects").fetchall()
 
-            # Проходим по всем объектам
             for obj in objects:
                 obj_id = obj["id"]
                 obj_name = obj["name"]
@@ -395,62 +430,58 @@ def monitor_loop():
                 if obj["paused"]:
                     continue  # Пропускаем приостановленные объекты
 
-                # Получаем все под-объекты для текущего объекта
                 subs = conn.execute(
                     "SELECT * FROM sub_objects WHERE object_id = ?", (obj_id,)
                 ).fetchall()
 
-                # Проверяем статус объекта (активен, если хотя бы один под-объект активен)
                 is_active = False
                 for sub in subs:
-                    if sub["paused"] or not sub["last_update"]:
+                    if not sub["last_update"]:
                         continue
 
                     last = datetime.fromisoformat(sub["last_update"])
                     if last.tzinfo is None:
                         last = last.replace(tzinfo=timezone.utc)
 
-                    # Если нашли хотя бы один активный под-объект
-                    if now - last <= ALLOWED_DELAY:
-                        is_active = True
-                        break
+                    # Проверка статуса под-объекта
+                    sub_active = now - last <= ALLOWED_DELAY
 
-                # Проверяем, изменился ли статус объекта
+                    # Индивидуальные уведомления для под-объектов с notification = 1
+                    if sub["notification"]:
+                        if not sub_active and sub["notified"] == 0:
+                            # Под-объект неактивен, отправляем уведомление
+                            send_telegram_message(
+                                f"🔴  {obj_name}::{sub['name']} не активен"
+                            )
+                            conn.execute(
+                                "UPDATE sub_objects SET notified = 1 WHERE id = ?",
+                                (sub["id"],),
+                            )
+                        elif sub_active and sub["notified"] == 1:
+                            # Под-объект восстановлен, отправляем уведомление
+                            send_telegram_message(
+                                f"🟢 {obj_name}::{sub['name']} восстановлен"
+                            )
+                            conn.execute(
+                                "UPDATE sub_objects SET notified = 0 WHERE id = ?",
+                                (sub["id"],),
+                            )
+
+                    # Если под-объект активен, объект считается активным
+                    if sub_active:
+                        is_active = True
+
+                # Проверка изменения статуса объекта
                 if obj_id in object_statuses:
                     if object_statuses[obj_id] != is_active:
-                        # Статус изменился, отправляем уведомление
                         status_text = "🟢 Активен" if is_active else "🔴 Неактивен"
                         send_telegram_message(f"{obj_name}: {status_text}")
-
-                        # Обновляем статус в БД
                         conn.execute(
                             "UPDATE objects SET status = ? WHERE id = ?",
                             ("active" if is_active else "inactive", obj_id),
                         )
 
-                # Обновляем статус в словаре
                 object_statuses[obj_id] = is_active
-
-                # Обновляем под-объекты (без уведомлений)
-                for sub in subs:
-                    if sub["paused"] or not sub["last_update"]:
-                        continue
-
-                    last = datetime.fromisoformat(sub["last_update"])
-                    if last.tzinfo is None:
-                        last = last.replace(tzinfo=timezone.utc)
-
-                    # Обновляем только флаг notified
-                    if now - last > ALLOWED_DELAY:
-                        conn.execute(
-                            "UPDATE sub_objects SET notified = 1 WHERE id = ?",
-                            (sub["id"],),
-                        )
-                    else:
-                        conn.execute(
-                            "UPDATE sub_objects SET notified = 0 WHERE id = ?",
-                            (sub["id"],),
-                        )
 
             conn.commit()
 
