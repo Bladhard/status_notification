@@ -1,14 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone, timedelta
 import sqlite3
 import threading
 import requests
 import logging
-import os
 import time
 import re
+import os
 
 # Конфигурация
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -16,6 +16,12 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 30))
 ALLOWED_DELAY = timedelta(seconds=int(os.getenv("ALLOWED_DELAY", 300)))
 DATABASE = "monitoring.db"
+
+# TELEGRAM_BOT_TOKEN = "6589598395:AAEADMcUbgXXgnlYaQLlAzCrG4OdPbabyas"
+# CHAT_ID = 5370215573
+# CHECK_INTERVAL = 20
+# ALLOWED_DELAY = timedelta(seconds=40)
+
 
 # Логирование
 logging.basicConfig(
@@ -407,6 +413,17 @@ def send_telegram_message(message):
         logging.error(f"Ошибка отправки в Telegram: {e}")
 
 
+def send_status_alert(obj_name, is_active, sub_name=None):
+    if sub_name:  # Для подсистем
+        if is_active:
+            send_telegram_message(f"✅ {obj_name} ➜ {sub_name} Восстановлен")
+        else:
+            send_telegram_message(f"❌ {obj_name} ➜ {sub_name} Недоступен")
+    else:  # Для основного объекта
+        status = "🟢 АКТИВЕН" if is_active else "🔴 НЕАКТИВЕН"
+        send_telegram_message(f"{status} ➜ {obj_name}")
+
+
 # Цикл мониторинга
 def monitor_loop():
     object_statuses = {}  # Словарь для хранения предыдущих статусов объектов
@@ -445,18 +462,16 @@ def monitor_loop():
                     if sub["notification"]:
                         if not sub_active and sub["notified"] == 0:
                             # Под-объект неактивен, отправляем уведомление
-                            send_telegram_message(
-                                f"🔴  {obj_name}::{sub['name']} не активен"
-                            )
+                            send_status_alert(obj_name, False, sub["name"])
+
                             conn.execute(
                                 "UPDATE sub_objects SET notified = 1 WHERE id = ?",
                                 (sub["id"],),
                             )
                         elif sub_active and sub["notified"] == 1:
                             # Под-объект восстановлен, отправляем уведомление
-                            send_telegram_message(
-                                f"🟢 {obj_name}::{sub['name']} восстановлен"
-                            )
+                            send_status_alert(obj_name, True, sub["name"])
+
                             conn.execute(
                                 "UPDATE sub_objects SET notified = 0 WHERE id = ?",
                                 (sub["id"],),
@@ -469,8 +484,8 @@ def monitor_loop():
                 # Проверка изменения статуса объекта
                 if obj_id in object_statuses:
                     if object_statuses[obj_id] != is_active:
-                        status_text = "🟢 Активен" if is_active else "🔴 Неактивен"
-                        send_telegram_message(f"{obj_name}: {status_text}")
+                        send_status_alert(obj_name, is_active)
+
                         conn.execute(
                             "UPDATE objects SET status = ? WHERE id = ?",
                             ("active" if is_active else "inactive", obj_id),
