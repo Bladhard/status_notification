@@ -5,7 +5,6 @@ from datetime import datetime, timezone, timedelta
 import sqlite3
 import threading
 import requests
-import socket
 import logging
 import time
 import re
@@ -16,6 +15,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 30))
 ALLOWED_DELAY = timedelta(seconds=int(os.getenv("ALLOWED_DELAY", 300)))
+DEFAULT_SERVER_URL = os.getenv("SERVER_URL", "")
 DATABASE = "monitoring.db"
 
 # Логирование
@@ -168,9 +168,7 @@ def natural_sort_key(s):
         for text in re.split(r"(\d+)", str(s))
     ]
 
-def get_default_server_url():
-    host = socket.gethostbyname(socket.gethostname())
-    return f"http://{host}:5000"
+
 
 def set_setting(key, value):
     conn = get_db_connection()
@@ -196,20 +194,10 @@ def get_setting(key):
         if row:
             return row["value"]
 
-        # если нет записи — создаём автоматически
         if key == "server_url":
-            default_value = get_default_server_url()
-
-            conn.execute(
-                "INSERT INTO settings (key, value) VALUES (?, ?)",
-                (key, default_value)
-            )
-            conn.commit()
-
-            return default_value
+            return DEFAULT_SERVER_URL
 
         return None
-
     finally:
         conn.close()
 
@@ -253,6 +241,23 @@ def init_db():
 @app.on_event("startup")
 def on_startup():
     init_db()
+
+    # гарантируем, что сервер_url есть в БД
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key = 'server_url'"
+        ).fetchone()
+
+        if not row:
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)",
+                ("server_url", DEFAULT_SERVER_URL)
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
     threading.Thread(target=monitor_loop, daemon=True).start()
 
 
