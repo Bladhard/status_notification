@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime, timezone, timedelta
@@ -203,7 +203,7 @@ def on_startup():
 
 
 @app.post("/update_status")
-def update_status(data: StatusUpdate):
+def update_status(request: Request, data: StatusUpdate):
     now = datetime.now(timezone.utc).isoformat()
 
     # Поддержка старого формата
@@ -213,7 +213,8 @@ def update_status(data: StatusUpdate):
     else:
         if not data.object_name or not data.sub_object_name:
             raise HTTPException(
-                status_code=400, detail="Missing object_name or sub_object_name"
+                status_code=400,
+                detail="Missing object_name or sub_object_name"
             )
         object_name = data.object_name
         sub_object_name = data.sub_object_name
@@ -223,6 +224,7 @@ def update_status(data: StatusUpdate):
         object_row = conn.execute(
             "SELECT id FROM objects WHERE name = ?", (object_name,)
         ).fetchone()
+
         if not object_row:
             conn.execute("INSERT INTO objects (name) VALUES (?)", (object_name,))
             conn.commit()
@@ -231,19 +233,27 @@ def update_status(data: StatusUpdate):
             ).fetchone()
 
         object_id = object_row["id"]
+
         conn.execute(
             """
             INSERT INTO sub_objects (object_id, name, last_update, notified)
             VALUES (?, ?, ?, 0)
-            ON CONFLICT(object_id, name) DO UPDATE SET last_update = excluded.last_update
-        """,
+            ON CONFLICT(object_id, name)
+            DO UPDATE SET last_update = excluded.last_update
+            """,
             (object_id, sub_object_name, now),
         )
+
         conn.commit()
-        logging.info(f"Получен сигнал от {object_name}::{sub_object_name}")
     finally:
         conn.close()
-    return {"status": "updated"}
+
+    server_address = f"{request.url.scheme}://{request.url.netloc}"
+
+    return {
+        "status": "updated",
+        "server": server_address
+    }
 
 
 @app.get("/status_tree")
