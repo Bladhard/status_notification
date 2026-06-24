@@ -1,10 +1,11 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime, timezone, timedelta
 import sqlite3
 import threading
 import requests
+import socket
 import logging
 import time
 import re
@@ -148,6 +149,8 @@ class NotificationToggle(BaseModel):
     object_name: str
     sub_object_name: str
 
+class ServerConfig(BaseModel):
+    server_url: str
 
 # Инициализация БД
 def get_db_connection():
@@ -164,6 +167,51 @@ def natural_sort_key(s):
         int(text) if text.isdigit() else text.lower()
         for text in re.split(r"(\d+)", str(s))
     ]
+
+def get_default_server_url():
+    host = socket.gethostbyname(socket.gethostname())
+    return f"http://{host}:5000"
+
+def set_setting(key, value):
+    conn = get_db_connection()
+    try:
+        conn.execute("""
+            INSERT INTO settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """, (key, value))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_setting(key):
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            (key,)
+        ).fetchone()
+
+        if row:
+            return row["value"]
+
+        # если нет записи — создаём автоматически
+        if key == "server_url":
+            default_value = get_default_server_url()
+
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)",
+                (key, default_value)
+            )
+            conn.commit()
+
+            return default_value
+
+        return None
+
+    finally:
+        conn.close()
 
 
 def init_db():
@@ -192,6 +240,12 @@ def init_db():
         )
     """
     )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+        """)
     conn.commit()
     conn.close()
 
@@ -202,8 +256,13 @@ def on_startup():
     threading.Thread(target=monitor_loop, daemon=True).start()
 
 
+@app.post("/set_server_url")
+def set_server_url(data: ServerConfig):
+    set_setting("server_url", data.server_url)
+    return {"status": "ok", "server_url": data.server_url}
+
 @app.post("/update_status")
-def update_status(request: Request, data: StatusUpdate):
+def update_status(data: StatusUpdate):
     now = datetime.now(timezone.utc).isoformat()
 
     # Поддержка старого формата
@@ -213,8 +272,7 @@ def update_status(request: Request, data: StatusUpdate):
     else:
         if not data.object_name or not data.sub_object_name:
             raise HTTPException(
-                status_code=400,
-                detail="Missing object_name or sub_object_name"
+                status_code=400, detail="Missing object_name or sub_object_name"
             )
         object_name = data.object_name
         sub_object_name = data.sub_object_name
@@ -224,7 +282,6 @@ def update_status(request: Request, data: StatusUpdate):
         object_row = conn.execute(
             "SELECT id FROM objects WHERE name = ?", (object_name,)
         ).fetchone()
-
         if not object_row:
             conn.execute("INSERT INTO objects (name) VALUES (?)", (object_name,))
             conn.commit()
@@ -233,26 +290,23 @@ def update_status(request: Request, data: StatusUpdate):
             ).fetchone()
 
         object_id = object_row["id"]
-
         conn.execute(
             """
             INSERT INTO sub_objects (object_id, name, last_update, notified)
             VALUES (?, ?, ?, 0)
-            ON CONFLICT(object_id, name)
-            DO UPDATE SET last_update = excluded.last_update
-            """,
+            ON CONFLICT(object_id, name) DO UPDATE SET last_update = excluded.last_update
+        """,
             (object_id, sub_object_name, now),
         )
-
         conn.commit()
+        logging.info(f"Получен сигнал от {object_name}::{sub_object_name}")
     finally:
         conn.close()
 
-    server_address = f"{request.url.scheme}://{request.url.netloc}"
-
+    server_url = get_setting("server_url")
     return {
         "status": "updated",
-        "server": server_address
+        "server_url": server_url
     }
 
 
