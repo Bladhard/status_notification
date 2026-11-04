@@ -123,6 +123,20 @@ app = FastAPI(
 ---
 """,
 )
+
+# ============================================================
+# Управление HTTP-соединениями
+# Принудительное закрытие соединения после каждого ответа
+# ============================================================
+
+@app.middleware("http")
+async def close_http_connection(request, call_next):
+    response = await call_next(request)
+
+    response.headers["Connection"] = "close"
+
+    return response
+
 # Настройка CORS
 app.add_middleware(
     CORSMiddleware,

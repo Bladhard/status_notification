@@ -1,6 +1,6 @@
 FROM python:3.11
 
-RUN mkdir /status_notification
+RUN mkdir -p /status_notification/data
 
 WORKDIR /status_notification
 
@@ -8,9 +8,16 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
-# Создаем директорию для данных
-RUN mkdir -p /status_notification/data
-
 COPY . .
 
-CMD gunicorn app:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8050
+CMD ["gunicorn", "app:app",
+     "--workers", "1",
+     "--worker-class", "uvicorn.workers.UvicornWorker",
+     "--bind", "0.0.0.0:8050",
+     "--timeout", "30",
+     "--graceful-timeout", "10",
+     "--keep-alive", "2",
+     "--max-requests", "10000",
+     "--max-requests-jitter", "1000",
+     "--access-logfile", "-",
+     "--error-logfile", "-"]
